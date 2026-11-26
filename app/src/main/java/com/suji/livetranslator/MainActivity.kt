@@ -13,6 +13,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import org.json.JSONObject
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 
@@ -36,6 +37,15 @@ class MainActivity : Activity() {
         }
         @JavascriptInterface
         fun running(): Boolean = TranslatorService.running
+        @JavascriptInterface
+        fun translate(text: String, lang: String, mode: String, key: String) {
+            Thread {
+                var ok = true
+                val out = try { TextTranslator(key).translate(text.take(6000), TextTranslator.prompt(lang, mode)) }
+                    catch (e: Exception) { ok = false; (e.message ?: e.javaClass.simpleName).take(160) }
+                runOnUiThread { web.evaluateJavascript("window.onTranslated&&onTranslated($ok, ${JSONObject.quote(out)})", null) }
+            }.start()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

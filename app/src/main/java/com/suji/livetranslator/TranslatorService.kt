@@ -146,6 +146,7 @@ class TranslatorService : Service() {
 
         val rules = "Translate faithfully and completely. Do not summarize, skip or add anything. Keep names and numbers accurate. Use natural spoken style. Speak only the translation."
         val prompt = if (mode == "my") "You are a professional live interpreter. Translate everything you hear, in any language, into Burmese (Myanmar). $rules"
+        else if (lang == "Auto") "You are a professional live interpreter between Burmese (Myanmar) and whichever other language you hear. Detect that language automatically. When you hear Burmese, translate it into English. When you hear any other language, translate it into Burmese. $rules"
         else "You are a professional live interpreter between $lang and Burmese (Myanmar). When you hear $lang, translate it into Burmese. When you hear Burmese, translate it into $lang. If you hear any other language, translate it into Burmese. $rules"
         val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{}}}""")
         val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()

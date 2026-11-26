@@ -58,6 +58,26 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--dim);font-size:13px;p
 @media (prefers-reduced-motion:reduce){.fb,.chev{transition:none}}
 .hint{margin:0 0 8px;font-size:13px;color:var(--dim)}
 .note{font-size:12.5px;color:var(--dim);margin:16px 6px 0}
+textarea{width:100%;min-height:96px;resize:vertical;background:rgba(255,255,255,.7);color:var(--ink);border:1px solid rgba(20,24,31,.1);border-radius:14px;padding:11px 14px;font:inherit;font-size:15px}
+.row{display:flex;gap:8px;margin-top:10px}
+.b2{flex:1;border:0;border-radius:14px;padding:10px;font:inherit;font-size:15px;cursor:pointer;background:var(--acc);color:#fff}.b2.g{flex:none;background:rgba(20,24,31,.08);color:var(--ink);padding:10px 16px}.b2:disabled{opacity:.5}
+.out{margin-top:10px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.7);white-space:pre-wrap;word-break:break-word;min-height:48px;font-size:15px;-webkit-user-select:text;user-select:text}
+.grp{margin-top:14px;padding:16px}
+.gt{font:600 14px/1.5 "Noto Sans Myanmar",sans-serif;color:var(--dim);margin:0}
+.gs{font-size:12.5px;color:var(--dim);margin:0}
+.tiles{display:grid;gap:10px;margin-top:10px}
+.t3{grid-template-columns:repeat(3,minmax(0,1fr))}.t2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tile{aspect-ratio:1;min-width:0;border:1px solid rgba(255,255,255,.9);border-radius:30px;background:rgba(255,255,255,.62);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:6px;font:inherit;font-size:13px;line-height:1.4;text-align:center;cursor:pointer;box-shadow:0 6px 18px rgba(40,60,110,.08),inset 0 1px 0 #fff;transition:transform .15s,box-shadow .15s,background .15s}
+.t3 .tile{aspect-ratio:1.2}.t2 .tile{aspect-ratio:2}
+.in .tiles{margin-top:4px}
+.tile i{font-style:normal;font-size:24px;line-height:1}
+.tile i.w{font-size:19px;letter-spacing:1px;white-space:nowrap}
+.tile svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.gi{width:16px;height:16px;vertical-align:-3px;margin-right:6px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tile span{overflow-wrap:anywhere}
+.tile:active{transform:scale(.95)}
+.tile[aria-pressed="true"]{background:linear-gradient(145deg,#2c5ce6,#2278c4);color:#fff;border-color:transparent;font-weight:600;box-shadow:0 10px 24px rgba(44,92,230,.35),inset 0 1px 0 rgba(255,255,255,.4)}
+@media (prefers-reduced-motion:reduce){.tile{transition:none}}
 </style></head>
 <body><div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <main>
@@ -69,18 +89,26 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--dim);font-size:13px;p
  <div id="st" class="st" role="status" aria-live="polite">အဆင်သင့်ပါ</div>
 </section>
 
+
+<section class="glass fold" id="f-txt"><button class="fh" type="button" aria-expanded="false"><span class="ft">📋 Text translate</span><span class="fs" id="s-txt"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
+<textarea id="ti" placeholder="ဘာသာပြန်ချင်တဲ့ စာ…" spellcheck="false"></textarea>
+<div class="row"><button id="tb" class="b2" type="button">ဘာသာပြန်မယ်</button><button id="tc" class="b2 g" type="button">ကူးမယ်</button></div>
+<div id="to" class="out" aria-live="polite"></div>
+</div></div></div></section>
+
 <div class="bar"><span>ဆက်တင်</span><button id="fa" class="fa" type="button">အားလုံးဖွင့်</button></div>
 <section class="glass fold" id="f-src"><button class="fh" type="button" aria-expanded="false"><span class="ft">🎧 အသံရင်းမြစ်</span><span class="fs" id="s-src"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
-<input id="src" type="hidden" value="phone"><div class="chips"><button class="chip" type="button" data-g="src" data-v="phone">📱 ဖုန်းထဲက အသံ</button><button class="chip" type="button" data-g="src" data-v="mic">🎤 မိုက်</button></div>
+<input id="src" type="hidden" value="phone"><div class="tiles t2" role="group" aria-label="အသံရင်းမြစ်"><button class="tile" type="button" data-g="src" data-v="phone"><i aria-hidden="true">📱</i><span>ဖုန်းထဲက အသံ</span></button><button class="tile" type="button" data-g="src" data-v="mic"><i aria-hidden="true">🎤</i><span>ပြင်ပက အသံ</span></button></div>
 </div></div></div></section>
 <section class="glass fold" id="f-lang"><button class="fh" type="button" aria-expanded="false"><span class="ft">🌐 ဘာသာစကား</span><span class="fs" id="s-lang"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
-<p class="hint">မြန်မာနဲ့ တွဲမယ့် ဘာသာစကား</p><input id="lang" type="hidden" value="English"><div class="chips"><button class="chip" type="button" data-g="lang" data-v="Japanese">ဂျပန်</button><button class="chip" type="button" data-g="lang" data-v="Korean">ကိုရီးယား</button><button class="chip" type="button" data-g="lang" data-v="English">အင်္ဂလိပ်</button><button class="chip" type="button" data-g="lang" data-v="Thai">ထိုင်း</button><button class="chip" type="button" data-g="lang" data-v="Chinese (Mandarin)">တရုတ်</button></div>
+<input id="lang" type="hidden" value="English"><div class="tiles t3" role="group" aria-label="ဘာသာစကား"><button class="tile" type="button" data-g="lang" data-v="Auto"><i aria-hidden="true">✨</i><span>Auto</span></button><button class="tile" type="button" data-g="lang" data-v="Japanese"><i aria-hidden="true">🇯🇵</i><span>ဂျပန်</span></button><button class="tile" type="button" data-g="lang" data-v="Korean"><i aria-hidden="true">🇰🇷</i><span>ကိုရီးယား</span></button><button class="tile" type="button" data-g="lang" data-v="English"><i aria-hidden="true">🇬🇧</i><span>အင်္ဂလိပ်</span></button><button class="tile" type="button" data-g="lang" data-v="Thai"><i aria-hidden="true">🇹🇭</i><span>ထိုင်း</span></button><button class="tile" type="button" data-g="lang" data-v="Chinese (Mandarin)"><i aria-hidden="true">🇨🇳</i><span>တရုတ်</span></button></div>
 </div></div></div></section>
-<section class="glass fold" id="f-mode"><button class="fh" type="button" aria-expanded="false"><span class="ft">🔁 ပြန်ဆိုပုံ</span><span class="fs" id="s-mode"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
-<input id="mode" type="hidden" value="both"><div class="chips"><button class="chip" type="button" data-g="mode" data-v="both">🔁 နှစ်ဖက်ပြန်</button><button class="chip" type="button" data-g="mode" data-v="my">➡️ မြန်မာလိုပဲ</button></div>
+<section class="glass fold" id="f-mode"><button class="fh" type="button" aria-expanded="false"><span class="ft">ဘာသာပြန်နည်းစနစ်</span><span class="fs" id="s-mode"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
+<input id="mode" type="hidden" value="both"><div class="tiles t2" role="group" aria-label="ဘာသာပြန်နည်းစနစ်"><button class="tile" type="button" data-g="mode" data-v="both"><i class="w" aria-hidden="true">🇲🇲⇄🌐</i><span>နှစ်ဖက်ပြန်</span></button><button class="tile" type="button" data-g="mode" data-v="my"><i class="w" aria-hidden="true">🌐→🇲🇲</i><span>မြန်မာလိုပဲ</span></button></div>
 </div></div></div></section>
-<section class="glass fold" id="f-save"><button class="fh" type="button" aria-expanded="false"><span class="ft">📝 စာသိမ်းမယ်</span><span class="fs" id="s-save"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
-<label class="chk"><input id="save" type="checkbox" checked> ရပ်တဲ့အခါ စာကို Download ထဲ သိမ်းမယ်</label>
+<section class="glass fold" id="f-save"><button class="fh" type="button" aria-expanded="false"><span class="ft"><svg class="gi" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 20h15"/></svg>စာသိမ်းမယ်</span><span class="fs" id="s-save"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
+<p class="gs">ရပ်တဲ့အခါ စာကို Download ထဲ သိမ်းမယ်</p>
+<input id="save" type="checkbox" checked hidden><div class="tiles t2" role="group" aria-label="စာသိမ်းမယ်"><button class="tile" type="button" data-sv="1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4.5 20h15"/></svg><span>သိမ်းမယ်</span></button><button class="tile" type="button" data-sv="0"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h7l4 4V20.5H7z"/><path d="M14 3.5v4h4"/><path d="M3.5 3.5l17 17"/></svg><span>မသိမ်းဘူး</span></button></div>
 </div></div></div></section>
 <section class="glass fold" id="f-aud"><button class="fh" type="button" aria-expanded="false"><span class="ft">🔊 အသံ</span><span class="fs" id="s-aud"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
 <div class="sl"><div><label for="orig" style="margin:0">မူရင်းအသံ</label><b id="ov"></b></div><input id="orig" type="range" min="0" max="100" value="20"></div>
@@ -104,11 +132,11 @@ var $=function(i){return document.getElementById(i)},on=false,F=["lang","orig","
 function ld(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function sv(k,v){try{localStorage.setItem(k,v)}catch(e){}}
 F.forEach(function(k){var v=ld("lt_"+k);if(v!==null)$(k).value=v;$(k).onchange=function(){sv("lt_"+k,this.value.trim())}});
-if(!/^(Japanese|Korean|English|Thai|Chinese)/.test($("lang").value))$("lang").value="English";
+if(!/^(Auto|Japanese|Korean|English|Thai|Chinese)/.test($("lang").value))$("lang").value="English";
 if(!/^(phone|mic)$/.test($("src").value))$("src").value="phone";if(!/^(both|my)$/.test($("mode").value))$("mode").value="both";
-var sk=ld("lt_save");if(sk!==null)$("save").checked=sk==="1";$("save").onchange=function(){sv("lt_save",this.checked?"1":"0");sums()};
-function chips(){var o=$("orig").closest(".sl");if(o)o.style.display=$("src").value==="mic"?"none":"";[].forEach.call(document.querySelectorAll(".chip"),function(c){c.setAttribute("aria-pressed",c.dataset.v===$(c.dataset.g).value)});sums()}
-[].forEach.call(document.querySelectorAll(".chip"),function(c){c.onclick=function(){$(c.dataset.g).value=c.dataset.v;sv("lt_"+c.dataset.g,c.dataset.v);chips()}});
+var sk=ld("lt_save");if(sk!==null)$("save").checked=sk==="1";[].forEach.call(document.querySelectorAll(".tile[data-sv]"),function(c){c.onclick=function(){$("save").checked=c.dataset.sv==="1";sv("lt_save",$("save").checked?"1":"0");chips()}});
+function chips(){var o=$("orig").closest(".sl");if(o)o.style.display=$("src").value==="mic"?"none":"";[].forEach.call(document.querySelectorAll(".chip,.tile[data-g]"),function(c){c.setAttribute("aria-pressed",c.dataset.v===$(c.dataset.g).value)});[].forEach.call(document.querySelectorAll(".tile[data-sv]"),function(c){c.setAttribute("aria-pressed",c.dataset.sv===($("save").checked?"1":"0"))});sums()}
+[].forEach.call(document.querySelectorAll(".chip,.tile[data-g]"),function(c){c.onclick=function(){$(c.dataset.g).value=c.dataset.v;sv("lt_"+c.dataset.g,c.dataset.v);chips()}});
 $("lb").onclick=function(){$("ab").hidden=false};$("ab").onclick=function(e){if(e.target===this||e.target.id==="abx")this.hidden=true};
 chips();
 var VG={f:[["Leda","Leda · လူငယ်"],["Zephyr","Zephyr · တောက်ပ"],["Kore","Kore · တည်ငြိမ်"],["Aoede","Aoede · ပေါ့ပါး"],["Sulafat","Sulafat · နွေးထွေး"],["Achernar","Achernar · နူးညံ့"],["Vindemiatrix","Vindemiatrix · သိမ်မွေ့"],["Gacrux","Gacrux · လူကြီး"]],
@@ -122,9 +150,9 @@ $("vt-f").onclick=function(){vg="f";vfill()};$("vt-m").onclick=function(){vg="m"
 $("vsel").onchange=function(){$("voice").value=this.value;sv("lt_voice",this.value)};
 function vv(){$("ov").textContent=$("orig").value+"%";$("av").textContent=$("ai").value+"%";sums()}
 ["orig","ai"].forEach(function(k){$(k).oninput=function(){vv();sv("lt_"+k,this.value)}});vv();
-function sums(){var LN={"Japanese":"ဂျပန်","Korean":"ကိုရီးယား","English":"အင်္ဂလိပ်","Thai":"ထိုင်း","Chinese (Mandarin)":"တရုတ်"};var t=function(i,v){var e=$(i);if(e)e.textContent=v};
-t("s-src",$("src").value==="mic"?"🎤 မိုက်":"📱 ဖုန်းထဲက အသံ");t("s-lang",LN[$("lang").value]||"");
-t("s-mode",$("mode").value==="my"?"➡️ မြန်မာလိုပဲ":"🔁 နှစ်ဖက်ပြန်");t("s-save",$("save").checked?"ဖွင့်":"ပိတ်");
+function sums(){var LN={"Auto":"✨ Auto","Japanese":"🇯🇵 ဂျပန်","Korean":"🇰🇷 ကိုရီးယား","English":"🇬🇧 အင်္ဂလိပ်","Thai":"🇹🇭 ထိုင်း","Chinese (Mandarin)":"🇨🇳 တရုတ်"};var t=function(i,v){var e=$(i);if(e)e.textContent=v};
+t("s-src",$("src").value==="mic"?"🎤 ပြင်ပက အသံ":"📱 ဖုန်းထဲက အသံ");t("s-lang",LN[$("lang").value]||"");
+t("s-mode",$("mode").value==="my"?"🌐→🇲🇲 မြန်မာလိုပဲ":"🇲🇲⇄🌐 နှစ်ဖက်ပြန်");t("s-save",$("save").checked?"သိမ်းမယ်":"မသိမ်းဘူး");
 t("s-aud","AI "+$("ai").value+"% · "+$("voice").value);t("s-key",$("key").value.trim()?"Key ✓":"Key မထည့်ရသေး")}
 $("key").addEventListener("input",sums);
 function short(m){if(m.length<=40)return m;if(/ချိတ်|ပြတ်|မရ/.test(m))return "ချိတ်ဆက်မရပါ။ VPN/Key ကို စစ်ပြီး ထပ်စမ်းပါ";return m.slice(0,40)+"…"}
@@ -134,11 +162,17 @@ $("go").onclick=function(){
  if(on){Android.stop();return}
  var k=$("key").value.trim();if(!k){onStatus(false,"API Key လိုပါတယ်");fold("key",true,1);tog();return}
  Android.start(k,$("model").value.trim(),$("voice").value,$("lang").value,+$("orig").value,+$("ai").value,$("src").value,$("mode").value,$("save").checked)};
-var FK=["src","lang","mode","save","aud","key"];
+var FK=["txt","src","lang","mode","save","aud","key"];
 function isOpen(k){return $("f-"+k).classList.contains("open")}
 function fold(k,o,store){var f=$("f-"+k);f.classList.toggle("open",o);f.querySelector(".fh").setAttribute("aria-expanded",o);if(store)sv("lt_f_"+k,o?"1":"0")}
 function tog(){$("fa").textContent=FK.every(isOpen)?"အားလုံးပိတ်":"အားလုံးဖွင့်"}
-FK.forEach(function(k){var v=ld("lt_f_"+k);fold(k,v===null?(k==="key"&&!$("key").value.trim()):v==="1");$("f-"+k).querySelector(".fh").onclick=function(){fold(k,!isOpen(k),1);tog()}});
+FK.forEach(function(k){var v=ld("lt_f_"+k);fold(k,v===null?(k==="lang"||(k==="key"&&!$("key").value.trim())):v==="1");$("f-"+k).querySelector(".fh").onclick=function(){fold(k,!isOpen(k),1);tog()}});
 $("fa").onclick=function(){var all=FK.every(isOpen);FK.forEach(function(k){fold(k,!all,1)});tog()};tog();sums();
+$("tb").onclick=function(){var x=$("ti").value.trim();if(!x)return;var k=$("key").value.trim();
+ if(!window.Android){$("to").textContent="ဒီစာမျက်နှာကို app ထဲမှာပဲ သုံးလို့ရပါတယ်";return}
+ if(!k){$("to").textContent="Gemini API Key အရင်ထည့်ပါ";fold("key",true,1);tog();return}
+ $("tb").disabled=true;$("to").dataset.ok="";$("to").textContent="ဘာသာပြန်နေပါတယ်…";Android.translate(x,$("lang").value,$("mode").value,k)};
+window.onTranslated=function(ok,t){$("tb").disabled=false;$("to").dataset.ok=String(ok);$("to").textContent=ok?t:"ဘာသာပြန်မရပါ ("+t+")"};
+$("tc").onclick=function(){var t=$("to").textContent;if($("to").dataset.ok!=="true"||!t)return;try{navigator.clipboard.writeText(t).then(function(){$("tc").textContent="ကူးပြီး ✓";setTimeout(function(){$("tc").textContent="ကူးမယ်"},1500)})}catch(e){}};
 if(window.Android&&Android.running())onStatus(true,"🟢 ဘာသာပြန်နေပါတယ်");
 </script></body></html>
