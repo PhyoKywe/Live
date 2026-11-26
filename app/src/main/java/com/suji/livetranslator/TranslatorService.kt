@@ -144,11 +144,11 @@ class TranslatorService : Service() {
         showOverlay()
         report(true, "Gemini ကို ချိတ်နေပါတယ်…")
 
-        val rules = "Translate faithfully and completely. Do not summarize, skip or add anything. Keep names and numbers accurate. Use natural spoken style. Speak only the translation."
+        val rules = "Translate faithfully and completely. Do not summarize, skip or add anything. Keep names and numbers accurate. Use natural spoken style. Translate continuously, sentence by sentence, without waiting for the speaker to pause, and keep pace with the speaker. Speak only the translation."
         val prompt = if (mode == "my") "You are a professional live interpreter. Translate everything you hear, in any language, into Burmese (Myanmar). $rules"
         else if (lang == "Auto") "You are a professional live interpreter between Burmese (Myanmar) and whichever other language you hear. Detect that language automatically. When you hear Burmese, translate it into English. When you hear any other language, translate it into Burmese. $rules"
         else "You are a professional live interpreter between $lang and Burmese (Myanmar). When you hear $lang, translate it into Burmese. When you hear Burmese, translate it into $lang. If you hear any other language, translate it into Burmese. $rules"
-        val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{}}}""")
+        val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{},"realtimeInputConfig":{"activityHandling":"NO_INTERRUPTION","automaticActivityDetection":{"startOfSpeechSensitivity":"START_SENSITIVITY_HIGH","endOfSpeechSensitivity":"END_SENSITIVITY_HIGH","prefixPaddingMs":20,"silenceDurationMs":300}}}}""")
         val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
         val req = Request.Builder()
             .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
@@ -274,7 +274,7 @@ class TranslatorService : Service() {
         c.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { ps ->
             for (k in 0 until ps.length()) ps.getJSONObject(k).optJSONObject("inlineData")?.optString("data")?.let { play(it) }
         }
-        if (c.optBoolean("interrupted")) track?.flush()
+        // "interrupted" is ignored on purpose: continuous YouTube audio must not cut off the translation
         if (c.optBoolean("turnComplete")) ui.post { flushTurn(); newTurn = true }
     }
 

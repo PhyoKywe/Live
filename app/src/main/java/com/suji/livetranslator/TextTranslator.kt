@@ -10,10 +10,13 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /** Text translation through the Gemini REST API (same API key as the live feature). Blocking: call off the main thread. */
-class TextTranslator(private val key: String, model: String = "gemini-2.5-flash") {
-    private val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+class TextTranslator(private val key: String, private val models: List<String> = MODELS) {
 
     companion object {
+        /** Tried in order; the next one is used when a model is unavailable (404) or rejects the request (400). */
+        val MODELS = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash")
+        @Volatile private var working: String? = null
+
         private val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -35,12 +38,37 @@ class TextTranslator(private val key: String, model: String = "gemini-2.5-flash"
             .put("contents", JSONArray().put(JSONObject().put("role", "user")
                 .put("parts", JSONArray().put(JSONObject().put("text", text)))))
             .put("generationConfig", JSONObject().put("temperature", 0.2))
+            .toString()
+        // Try the last working model first, then the rest of the list.
+        val order = listOfNotNull(working) + models.filter { it != working }
+        var last: IOException? = null
+        for (m in order) {
+            try {
+                val out = call(m, body)
+                working = m
+                return out
+            } catch (e: ModelUnavailable) {
+                last = e
+                if (working == m) working = null
+            }
+        }
+        throw last ?: IOException("no model available")
+    }
+
+    private class ModelUnavailable(msg: String) : IOException(msg)
+
+    private fun call(model: String, body: String): String {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
         val req = Request.Builder().url(url)
             .header("x-goog-api-key", key)
-            .post(body.toString().toRequestBody(JSON)).build()
+            .post(body.toRequestBody(JSON)).build()
         return client.newCall(req).execute().use { r ->
             val s = r.body?.string().orEmpty()
-            if (!r.isSuccessful) throw IOException("HTTP ${r.code} " + s.take(120))
+            if (!r.isSuccessful) {
+                val msg = "HTTP ${r.code} ($model) " + s.take(120)
+                if (r.code == 404 || r.code == 400) throw ModelUnavailable(msg)
+                throw IOException(msg)
+            }
             val parts = JSONObject(s).getJSONArray("candidates").getJSONObject(0)
                 .getJSONObject("content").getJSONArray("parts")
             val sb = StringBuilder()
