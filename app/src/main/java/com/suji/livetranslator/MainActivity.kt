@@ -22,10 +22,11 @@ class MainActivity : Activity() {
 
     inner class Bridge {
         @JavascriptInterface
-        fun start(key: String, model: String, voice: String, lang: String, orig: Int, ai: Int) {
+        fun start(key: String, model: String, voice: String, lang: String, orig: Int, ai: Int, src: String, mode: String, save: Boolean) {
             cfg = Bundle().apply {
                 putString("key", key); putString("model", model); putString("voice", voice)
                 putString("lang", lang); putInt("orig", orig); putInt("ai", ai)
+                putString("src", src); putString("mode", mode); putBoolean("save", save)
             }
             runOnUiThread { begin() }
         }
@@ -68,6 +69,10 @@ class MainActivity : Activity() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) need += Manifest.permission.RECORD_AUDIO
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) need += Manifest.permission.POST_NOTIFICATIONS
         if (need.isNotEmpty()) { requestPermissions(need.toTypedArray(), 1); return }
+        if (cfg?.getString("src") == "mic") {
+            startForegroundService(Intent(this, TranslatorService::class.java).putExtras(cfg!!))
+            return
+        }
         val mpm = getSystemService(MediaProjectionManager::class.java)
         @Suppress("DEPRECATION")
         startActivityForResult(mpm.createScreenCaptureIntent(), 7)

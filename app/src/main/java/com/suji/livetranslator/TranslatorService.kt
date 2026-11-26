@@ -16,6 +16,7 @@ import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
+import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -57,8 +58,15 @@ class TranslatorService : Service() {
     private var oldAlarm = -1
     @Volatile private var live = false
     @Volatile private var gain = 1f
+    @Volatile private var stopping = false
     private var newTurn = true
     private var outT = ""
+    private var mic = false
+    private var saveOn = false
+    private var curIn = ""
+    private var curOut = ""
+    private var volStream = AudioManager.STREAM_ALARM
+    private val tlog = StringBuilder()
 
     override fun onBind(i: Intent?): IBinder? = null
 
@@ -66,15 +74,19 @@ class TranslatorService : Service() {
         if (i == null || i.action == "STOP") { stopSelf(); return START_NOT_STICKY }
         if (running) return START_NOT_STICKY
         running = true
-        startFg()
-        try { begin(i) } catch (e: Exception) { report(false, "စတင်မရပါ: ${e.message}"); stopSelf() }
+        startFg(i.getStringExtra("src") == "mic")
+        try { begin(i) } catch (e: Exception) { android.util.Log.e("LiveTranslate", e.toString()); report(false, "စတင်မရပါ"); stopSelf() }
         return START_NOT_STICKY
     }
 
     private fun report(on: Boolean, msg: String) = ui.post { status?.invoke(on, msg) }
-    private fun fail(msg: String) { report(false, msg); ui.post { stopSelf() } }
+    private fun fail(msg: String, detail: String? = null) {
+        if (stopping) return
+        android.util.Log.e("LiveTranslate", detail ?: msg)
+        report(false, msg); ui.post { stopSelf() }
+    }
 
-    private fun startFg() {
+    private fun startFg(micMode: Boolean) {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("lt", "ဘာသာပြန်", NotificationManager.IMPORTANCE_LOW))
         val stop = PendingIntent.getService(this, 0,
@@ -82,10 +94,10 @@ class TranslatorService : Service() {
         @Suppress("DEPRECATION")
         val n = Notification.Builder(this, "lt")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("တိုက်ရိုက်ဘာသာပြန်နေပါတယ်")
+            .setContentTitle("Live Translate")
             .addAction(Notification.Action.Builder(android.R.drawable.ic_media_pause, "ရပ်မယ်", stop).build())
             .build()
-        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, if (micMode) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         else startForeground(1, n)
     }
 
@@ -95,25 +107,33 @@ class TranslatorService : Service() {
         val model = i.getStringExtra("model")!!
         val voice = i.getStringExtra("voice")!!
         val lang = i.getStringExtra("lang")!!
+        mic = i.getStringExtra("src") == "mic"
+        saveOn = i.getBooleanExtra("save", false)
+        val mode = i.getStringExtra("mode") ?: "both"
         gain = i.getIntExtra("ai", 100) / 100f
         val orig = i.getIntExtra("orig", 20); origPct = orig; aiPct = i.getIntExtra("ai", 100)
 
         am = getSystemService(AudioManager::class.java)
         val a = am!!
-        oldMusic = a.getStreamVolume(AudioManager.STREAM_MUSIC)
-        oldAlarm = a.getStreamVolume(AudioManager.STREAM_ALARM)
-        a.setStreamVolume(AudioManager.STREAM_ALARM, a.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
-        a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * orig / 100f).toInt(), 0)
+        volStream = if (mic) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_ALARM
+        oldAlarm = a.getStreamVolume(volStream)
+        a.setStreamVolume(volStream, a.getStreamMaxVolume(volStream), 0)
+        if (!mic) {
+            oldMusic = a.getStreamVolume(AudioManager.STREAM_MUSIC)
+            a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * orig / 100f).toInt(), 0)
+        }
 
+        if (!mic) {
         val mpm = getSystemService(MediaProjectionManager::class.java)
         val data = i.getParcelableExtra<Intent>("data")!!
         projection = mpm.getMediaProjection(i.getIntExtra("code", Activity.RESULT_CANCELED), data)
         projection!!.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { ui.post { stopSelf() } }
         }, ui)
+        }
 
         track = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(if (mic) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                 .setSampleRate(24000).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
@@ -124,7 +144,10 @@ class TranslatorService : Service() {
         showOverlay()
         report(true, "Gemini ကို ချိတ်နေပါတယ်…")
 
-        val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"You are a live interpreter. Detect the spoken language automatically and translate everything you hear into $lang. Speak only the translation. Do not add comments."}]},"inputAudioTranscription":{},"outputAudioTranscription":{}}}""")
+        val rules = "Translate faithfully and completely. Do not summarize, skip or add anything. Keep names and numbers accurate. Use natural spoken style. Speak only the translation."
+        val prompt = if (mode == "my") "You are a professional live interpreter. Translate everything you hear, in any language, into Burmese (Myanmar). $rules"
+        else "You are a professional live interpreter between $lang and Burmese (Myanmar). When you hear $lang, translate it into Burmese. When you hear Burmese, translate it into $lang. If you hear any other language, translate it into Burmese. $rules"
+        val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{}}}""")
         val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
         val req = Request.Builder()
             .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
@@ -133,8 +156,8 @@ class TranslatorService : Service() {
             override fun onOpen(w: WebSocket, r: Response) { w.send(setup.toString()) }
             override fun onMessage(w: WebSocket, text: String) = handle(text)
             override fun onMessage(w: WebSocket, bytes: ByteString) = handle(bytes.utf8())
-            override fun onClosing(w: WebSocket, code: Int, reason: String) { w.close(1000, null); fail("ပြတ်သွားပါပြီ: $reason") }
-            override fun onFailure(w: WebSocket, t: Throwable, r: Response?) { fail("ချိတ်မရပါ: ${t.message}") }
+            override fun onClosing(w: WebSocket, code: Int, reason: String) { w.close(1000, null); fail("ပြတ်သွားပါပြီ", reason) }
+            override fun onFailure(w: WebSocket, t: Throwable, r: Response?) { fail("ချိတ်မရပါ", t.toString()) }
         })
     }
 
@@ -184,7 +207,7 @@ class TranslatorService : Service() {
     private fun placePanel() {
         if (!panelOn) return
         panLp.x = dp(12)
-        panLp.y = (bubLp.y + dp(64)).coerceAtMost(resources.displayMetrics.heightPixels - dp(330))
+        panLp.y = (bubLp.y + dp(64)).coerceAtMost(resources.displayMetrics.heightPixels - dp(420))
         try { wm?.updateViewLayout(panel, panLp) } catch (_: Exception) {}
     }
 
@@ -224,11 +247,12 @@ class TranslatorService : Service() {
         val gap = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(10), dp(18), dp(16)); background = glass(26)
-            addView(label("မူရင်းအသံ"))
-            addView(seek(100, origPct) { p -> am?.let { it.setStreamVolume(AudioManager.STREAM_MUSIC, (it.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * p / 100f).toInt(), 0) } })
+            if (!mic) addView(label("မူရင်းအသံ"))
+            if (!mic) addView(seek(100, origPct) { p -> am?.let { it.setStreamVolume(AudioManager.STREAM_MUSIC, (it.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * p / 100f).toInt(), 0) } })
             addView(label("AI ဘာသာပြန်သံ"))
             addView(seek(150, aiPct) { p -> gain = p / 100f })
             addView(btn("စာတန်း ပိတ်/ဖွင့်", 0x1A14181F, ink) { tv?.visibility = if (tv?.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE }, gap)
+            addView(btn("စာကို ယခုသိမ်းမယ်", 0x1A14181F, ink) { saveTranscript(true) }, gap)
             addView(btn("ရပ်မယ်", acc, 0xFFFFFFFF.toInt()) { stopSelf() }, gap)
         }
         panLp = lp((sw * 0.76).toInt())
@@ -243,16 +267,54 @@ class TranslatorService : Service() {
         if (m.has("setupComplete")) { startCapture(); return }
         val c = m.optJSONObject("serverContent") ?: return
         c.optJSONObject("outputTranscription")?.optString("text")?.let { t ->
-            ui.post { if (newTurn) { outT = ""; newTurn = false }; outT += t; tv?.text = outT }
+            ui.post { if (newTurn) { outT = ""; newTurn = false }; outT += t; curOut += t; tv?.text = outT }
         }
+        c.optJSONObject("inputTranscription")?.optString("text")?.let { t -> ui.post { curIn += t } }
         c.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { ps ->
             for (k in 0 until ps.length()) ps.getJSONObject(k).optJSONObject("inlineData")?.optString("data")?.let { play(it) }
         }
         if (c.optBoolean("interrupted")) track?.flush()
-        if (c.optBoolean("turnComplete")) ui.post { newTurn = true }
+        if (c.optBoolean("turnComplete")) ui.post { flushTurn(); newTurn = true }
     }
 
-    private fun play(b64: String) = player.execute {
+    private fun flushTurn() {
+        if (curIn.isBlank() && curOut.isBlank()) return
+        val t = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        tlog.append("[").append(t).append("]\n")
+        if (curIn.isNotBlank()) tlog.append("မူရင်း: ").append(curIn.trim()).append("\n")
+        if (curOut.isNotBlank()) tlog.append("ဘာသာပြန်: ").append(curOut.trim()).append("\n")
+        tlog.append("\n")
+        curIn = ""; curOut = ""
+    }
+
+    private fun saveTranscript(notify: Boolean): Boolean {
+        flushTurn()
+        if (tlog.isEmpty()) { if (notify) report(live, "သိမ်းစရာ စာ မရှိသေးပါ"); return false }
+        return try {
+            val name = "LiveTranslate_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt"
+            val v = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/LiveTranslate")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v)!!
+            contentResolver.openOutputStream(uri)!!.use { it.write(tlog.toString().toByteArray(Charsets.UTF_8)) }
+            tlog.setLength(0)
+            if (notify) report(live, "သိမ်းပြီးပါပြီ: Download/LiveTranslate")
+            true
+        } catch (e: Exception) {
+            android.util.Log.e("LiveTranslate", e.toString())
+            if (notify) report(live, "သိမ်းမရပါ")
+            false
+        }
+    }
+
+    private fun play(b64: String) {
+        if (stopping) return
+        try { player.execute { playNow(b64) } } catch (_: Exception) {}
+    }
+
+    private fun playNow(b64: String) {
         val b = Base64.decode(b64, Base64.DEFAULT)
         val g = gain
         if (g != 1f) {
@@ -268,14 +330,19 @@ class TranslatorService : Service() {
 
     private fun startCapture() {
         try {
-            val cap = AudioPlaybackCaptureConfiguration.Builder(projection!!)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).build()
-            rec = AudioRecord.Builder()
-                .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build())
-                .setAudioPlaybackCaptureConfig(cap).setBufferSizeInBytes(32000).build()
+            rec = if (mic) {
+                AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 16000,
+                    AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, 32000)
+            } else {
+                val cap = AudioPlaybackCaptureConfiguration.Builder(projection!!)
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN).build()
+                AudioRecord.Builder()
+                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build())
+                    .setAudioPlaybackCaptureConfig(cap).setBufferSizeInBytes(32000).build()
+            }
             rec!!.startRecording()
             live = true
             report(true, "🟢 ဘာသာပြန်နေပါတယ်")
@@ -287,11 +354,11 @@ class TranslatorService : Service() {
                     else if (n < 0) break
                 }
             }.start()
-        } catch (e: Exception) { fail("အသံဖမ်းမရပါ: ${e.message}") }
+        } catch (e: Exception) { fail("အသံဖမ်းမရပါ", e.toString()) }
     }
 
     override fun onDestroy() {
-        live = false; running = false
+        stopping = true; live = false; running = false
         try { ws?.close(1000, null) } catch (_: Exception) {}
         try { rec?.stop(); rec?.release() } catch (_: Exception) {}
         try { track?.release() } catch (_: Exception) {}
@@ -301,10 +368,11 @@ class TranslatorService : Service() {
         try { if (panelOn) wm?.removeView(panel) } catch (_: Exception) {}
         am?.let {
             if (oldMusic >= 0) it.setStreamVolume(AudioManager.STREAM_MUSIC, oldMusic, 0)
-            if (oldAlarm >= 0) it.setStreamVolume(AudioManager.STREAM_ALARM, oldAlarm, 0)
+            if (oldAlarm >= 0) it.setStreamVolume(volStream, oldAlarm, 0)
         }
+        val saved = saveOn && saveTranscript(false)
         player.shutdownNow()
-        report(false, "ရပ်ထားပါတယ်")
+        report(false, if (saved) "ရပ်ပြီး၊ စာသိမ်းပြီးပါပြီ" else "ရပ်ထားပါတယ်")
         super.onDestroy()
     }
 }
