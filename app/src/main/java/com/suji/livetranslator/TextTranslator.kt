@@ -14,12 +14,12 @@ class TextTranslator(private val key: String, private val models: List<String> =
 
     companion object {
         /** Tried in order; the next one is used when a model is unavailable (404) or rejects the request (400). */
-        val MODELS = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash")
+        val MODELS = listOf("gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash")
         @Volatile private var working: String? = null
 
         private val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
             .build()
         private val JSON = "application/json".toMediaType()
 
@@ -41,18 +41,21 @@ class TextTranslator(private val key: String, private val models: List<String> =
             .toString()
         // Try the last working model first, then the rest of the list.
         val order = listOfNotNull(working) + models.filter { it != working }
-        var last: IOException? = null
+        val errs = ArrayList<String>()
         for (m in order) {
             try {
                 val out = call(m, body)
                 working = m
                 return out
             } catch (e: ModelUnavailable) {
-                last = e
+                errs += e.message.orEmpty()
+                if (working == m) working = null
+            } catch (e: java.net.SocketTimeoutException) {
+                errs += "$m timeout"
                 if (working == m) working = null
             }
         }
-        throw last ?: IOException("no model available")
+        throw IOException(errs.joinToString(" | ").ifEmpty { "no model available" })
     }
 
     private class ModelUnavailable(msg: String) : IOException(msg)
@@ -65,9 +68,11 @@ class TextTranslator(private val key: String, private val models: List<String> =
         return client.newCall(req).execute().use { r ->
             val s = r.body?.string().orEmpty()
             if (!r.isSuccessful) {
-                val msg = "HTTP ${r.code} ($model) " + s.take(120)
-                if (r.code == 404 || r.code == 400) throw ModelUnavailable(msg)
-                throw IOException(msg)
+                val reason = try { JSONObject(s).getJSONObject("error").optString("message") } catch (_: Exception) { s }
+                val msg = "$model HTTP ${r.code}: " + reason.take(70)
+                // A bad key fails on every model, so stop right away; anything else (quota, model, server) tries the next model.
+                if (reason.contains("API key not valid", true) || s.contains("API_KEY_INVALID")) throw IOException(msg)
+                throw ModelUnavailable(msg)
             }
             val parts = JSONObject(s).getJSONArray("candidates").getJSONObject(0)
                 .getJSONObject("content").getJSONArray("parts")

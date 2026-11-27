@@ -52,6 +52,12 @@ class TranslatorService : Service() {
     private var rec: AudioRecord? = null
     private var track: AudioTrack? = null
     private var ws: WebSocket? = null
+    private var ws2: WebSocket? = null
+    @Volatile private var ready1 = false
+    @Volatile private var ready2 = false
+    private var captureStarted = false
+    private var isTr = false
+    private var lastOutMs = 0L
     private var tv: TextView? = null
     private var am: AudioManager? = null
     private var oldMusic = -1
@@ -148,24 +154,34 @@ class TranslatorService : Service() {
         val prompt = if (mode == "my") "You are a professional live interpreter. Translate everything you hear, in any language, into Burmese (Myanmar). $rules"
         else if (lang == "Auto") "You are a professional live interpreter between Burmese (Myanmar) and whichever other language you hear. Detect that language automatically. When you hear Burmese, translate it into English. When you hear any other language, translate it into Burmese. $rules"
         else "You are a professional live interpreter between $lang and Burmese (Myanmar). When you hear $lang, translate it into Burmese. When you hear Burmese, translate it into $lang. If you hear any other language, translate it into Burmese. $rules"
-        val setup = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{},"realtimeInputConfig":{"activityHandling":"NO_INTERRUPTION","automaticActivityDetection":{"startOfSpeechSensitivity":"START_SENSITIVITY_HIGH","endOfSpeechSensitivity":"END_SENSITIVITY_HIGH","prefixPaddingMs":20,"silenceDurationMs":300}}}}""")
+        isTr = model.contains("live-translate")
+        fun codeOf(n: String) = when (n) { "Japanese" -> "ja"; "Korean" -> "ko"; "English" -> "en"; "Thai" -> "th"; "Chinese (Mandarin)" -> "zh-Hans"; else -> "en" }
+        fun trSetup(code: String) = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"inputAudioTranscription":{},"outputAudioTranscription":{},"translationConfig":{"targetLanguageCode":"$code","echoTargetLanguage":false}}}}""")
+        val setup = if (isTr) trSetup("my") else JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{},"realtimeInputConfig":{"activityHandling":"NO_INTERRUPTION","automaticActivityDetection":{"startOfSpeechSensitivity":"START_SENSITIVITY_HIGH","endOfSpeechSensitivity":"END_SENSITIVITY_HIGH","prefixPaddingMs":20,"silenceDurationMs":300}}}}""")
+        val setup2 = if (isTr && mode != "my" && lang != "Auto") trSetup(codeOf(lang)) else null
         val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
         val req = Request.Builder()
             .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
             .header("x-goog-api-key", key).build()
-        ws = client.newWebSocket(req, object : WebSocketListener() {
-            override fun onOpen(w: WebSocket, r: Response) { w.send(setup.toString()) }
-            override fun onMessage(w: WebSocket, text: String) = handle(text)
-            override fun onMessage(w: WebSocket, bytes: ByteString) = handle(bytes.utf8())
+        fun open(st: JSONObject, primary: Boolean): WebSocket = client.newWebSocket(req, object : WebSocketListener() {
+            override fun onOpen(w: WebSocket, r: Response) { w.send(st.toString()) }
+            override fun onMessage(w: WebSocket, text: String) = handle(text, primary)
+            override fun onMessage(w: WebSocket, bytes: ByteString) = handle(bytes.utf8(), primary)
             override fun onClosing(w: WebSocket, code: Int, reason: String) { w.close(1000, null); fail("ပြတ်သွားပါပြီ", reason) }
             override fun onFailure(w: WebSocket, t: Throwable, r: Response?) { fail("ချိတ်မရပါ", t.toString()) }
         })
+        ws = open(setup, true)
+        if (setup2 != null) ws2 = open(setup2, false)
     }
 
     private var wm: WindowManager? = null
     private var bubble: TextView? = null
     private var panel: LinearLayout? = null
     private var panelOn = false
+    private var subOn = true
+    private var subLines = 2
+    private var subSp = 15f
+    private val hideRun = Runnable { tv?.visibility = android.view.View.GONE }
     private var origPct = 20
     private var aiPct = 100
     private lateinit var subLp: WindowManager.LayoutParams
@@ -208,7 +224,7 @@ class TranslatorService : Service() {
     private fun placePanel() {
         if (!panelOn) return
         panLp.x = dp(12)
-        panLp.y = (bubLp.y + dp(64)).coerceAtMost(resources.displayMetrics.heightPixels - dp(420))
+        panLp.y = (bubLp.y + dp(64)).coerceAtMost(resources.displayMetrics.heightPixels - dp(540))
         try { wm?.updateViewLayout(panel, panLp) } catch (_: Exception) {}
     }
 
@@ -218,9 +234,11 @@ class TranslatorService : Service() {
         val sh = resources.displayMetrics.heightPixels
         val ink = 0xFF14181F.toInt(); val acc = 0xFF2F6BFF.toInt(); val dim = 0xFF5D6676.toInt()
 
+        val pr = getSharedPreferences("ui", MODE_PRIVATE)
+        subLines = pr.getInt("lines", 2); subSp = pr.getFloat("sp", 15f)
         tv = TextView(this).apply {
-            setTextColor(ink); textSize = 18f; gravity = Gravity.CENTER
-            setPadding(dp(16), dp(12), dp(16), dp(12)); text = "…"; background = glass(20)
+            setTextColor(ink); textSize = subSp; gravity = Gravity.CENTER
+            setPadding(dp(14), dp(8), dp(14), dp(8)); text = ""; visibility = android.view.View.GONE; background = glass(20)
         }
         subLp = lp((sw * 0.92).toInt()).apply { x = (sw * 0.04).toInt(); y = (sh * 0.68).toInt() }
         wm!!.addView(tv, subLp)
@@ -252,7 +270,11 @@ class TranslatorService : Service() {
             if (!mic) addView(seek(100, origPct) { p -> am?.let { it.setStreamVolume(AudioManager.STREAM_MUSIC, (it.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * p / 100f).toInt(), 0) } })
             addView(label("AI ဘာသာပြန်သံ"))
             addView(seek(150, aiPct) { p -> gain = p / 100f })
-            addView(btn("စာတန်း ပိတ်/ဖွင့်", 0x1A14181F, ink) { tv?.visibility = if (tv?.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE }, gap)
+            addView(label("စာလုံးအရွယ်"))
+            addView(seek(12, (subSp - 12f).toInt()) { p -> subSp = 12f + p; tv?.textSize = subSp; getSharedPreferences("ui", MODE_PRIVATE).edit().putFloat("sp", subSp).apply(); showSub() })
+            addView(label("စာတန်း စာကြောင်းရေ"))
+            addView(seek(4, subLines - 1) { p -> subLines = p + 1; getSharedPreferences("ui", MODE_PRIVATE).edit().putInt("lines", subLines).apply(); showSub() })
+            addView(btn("စာတန်း ပိတ်/ဖွင့်", 0x1A14181F, ink) { subOn = !subOn; if (!subOn) tv?.visibility = android.view.View.GONE else showSub() }, gap)
             addView(btn("စာကို ယခုသိမ်းမယ်", 0x1A14181F, ink) { saveTranscript(true) }, gap)
             addView(btn("ရပ်မယ်", acc, 0xFFFFFFFF.toInt()) { stopSelf() }, gap)
         }
@@ -263,14 +285,43 @@ class TranslatorService : Service() {
         }
     }
 
-    private fun handle(text: String) {
+    private fun showSub() {
+        val t = tv ?: return
+        if (outT.isEmpty() || !subOn) return
+        t.maxLines = Int.MAX_VALUE
+        t.text = outT.takeLast(320)
+        t.visibility = android.view.View.VISIBLE
+        t.post {
+            val l = t.layout
+            if (l != null && l.lineCount > subLines) {
+                val st = l.getLineStart(l.lineCount - subLines)
+                t.text = "…" + t.text.toString().substring(st)
+            }
+            t.maxLines = subLines
+        }
+        ui.removeCallbacks(hideRun)
+        ui.postDelayed(hideRun, 4000)
+    }
+
+    private fun handle(text: String, primary: Boolean = true) {
         val m = JSONObject(text)
-        if (m.has("setupComplete")) { startCapture(); return }
+        if (m.has("setupComplete")) {
+            if (primary) ready1 = true else ready2 = true
+            if (!captureStarted) { captureStarted = true; startCapture() }
+            return
+        }
         val c = m.optJSONObject("serverContent") ?: return
         c.optJSONObject("outputTranscription")?.optString("text")?.let { t ->
-            ui.post { if (newTurn) { outT = ""; newTurn = false }; outT += t; curOut += t; tv?.text = outT }
+            ui.post {
+                val now = System.currentTimeMillis()
+                if (isTr && now - lastOutMs > 2500) { flushTurn(); newTurn = true }
+                lastOutMs = now
+                if (newTurn) { outT = ""; newTurn = false }
+                outT += t; curOut += t
+                showSub()
+            }
         }
-        c.optJSONObject("inputTranscription")?.optString("text")?.let { t -> ui.post { curIn += t } }
+        c.optJSONObject("inputTranscription")?.optString("text")?.let { t -> if (primary) ui.post { curIn += t } }
         c.optJSONObject("modelTurn")?.optJSONArray("parts")?.let { ps ->
             for (k in 0 until ps.length()) ps.getJSONObject(k).optJSONObject("inlineData")?.optString("data")?.let { play(it) }
         }
@@ -351,8 +402,11 @@ class TranslatorService : Service() {
                 val buf = ByteArray(3200)
                 while (live) {
                     val n = rec?.read(buf, 0, buf.size) ?: break
-                    if (n > 0) ws?.send("""{"realtimeInput":{"audio":{"data":"${Base64.encodeToString(buf, 0, n, Base64.NO_WRAP)}","mimeType":"audio/pcm;rate=16000"}}}""")
-                    else if (n < 0) break
+                    if (n > 0) {
+                        val j = """{"realtimeInput":{"audio":{"data":"${Base64.encodeToString(buf, 0, n, Base64.NO_WRAP)}","mimeType":"audio/pcm;rate=16000"}}}"""
+                        if (ready1) ws?.send(j)
+                        if (ready2) ws2?.send(j)
+                    } else if (n < 0) break
                 }
             }.start()
         } catch (e: Exception) { fail("အသံဖမ်းမရပါ", e.toString()) }
@@ -360,7 +414,9 @@ class TranslatorService : Service() {
 
     override fun onDestroy() {
         stopping = true; live = false; running = false
+        ui.removeCallbacks(hideRun)
         try { ws?.close(1000, null) } catch (_: Exception) {}
+        try { ws2?.close(1000, null) } catch (_: Exception) {}
         try { rec?.stop(); rec?.release() } catch (_: Exception) {}
         try { track?.release() } catch (_: Exception) {}
         try { projection?.stop() } catch (_: Exception) {}

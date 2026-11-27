@@ -152,12 +152,13 @@ summary{font-weight:600}
 <input id="voice" type="hidden" value="Kore">
 <div class="seg" role="tablist" aria-label="အသံအမျိုးအစား"><button id="vt-m" type="button" role="tab" aria-pressed="false">👨 ယောက်ျား</button><button id="vt-f" type="button" role="tab" aria-pressed="true">👩 မိန်းမ</button></div>
 <select id="vsel" aria-label="AI အသံရွေးရန်" style="margin-top:10px"></select>
+<p class="hint" id="vh" hidden>Live Translate model မှာ AI အသံပုံစံ ရွေးလို့ မရပါ (ပြောသူရဲ့ အသံနဲ့ ဆင်တူအောင် ထွက်ပါတယ်)။</p>
 </div></div></div></section>
 <section class="glass fold" id="f-conn"><button class="fh" type="button" aria-expanded="false"><span class="ft"><b class="ico i-key" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2.6 18.4A2 2 0 0 0 2 19.8V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.2a1 1 0 0 0 .7-.3l.8-.8a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r="1" fill="currentColor"/></svg></b>ချိတ်ဆက်မှု</span><span class="fs" id="s-conn"></span><i class="chev"></i></button><div class="fb"><div class="fi"><div class="in">
 <label for="key" class="kl">Gemini API Key</label>
 <div class="pw"><input id="key" type="password" autocomplete="off" placeholder="AIza..."><button id="ke" class="eye" type="button" aria-label="Key ပြ/ဖျောက်" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
 <p class="gs kn">Key ကို ဒီဖုန်းထဲမှာပဲ သိမ်းထားပါတယ်</p>
-<details><summary>အဆင့်မြင့်</summary><label for="model">Model ID (ပုံမှန်အတိုင်း ထားပါ)</label><input id="model" type="text" value="models/gemini-2.5-flash-native-audio-preview-09-2025"></details>
+<details><summary>အဆင့်မြင့်</summary><label for="model">Model ID (ပုံမှန်အတိုင်း ထားပါ)</label><input id="model" type="text" value="models/gemini-3.5-live-translate-preview"></details>
 </div></div></div></section>
 
 <p class="note">စတင်ရင် overlay၊ အသံ၊ မျက်နှာပြင်ဖမ်းခွင့်တွေ တောင်းပါမယ်။ ဘာသာပြန်စာတန်းက တခြား app အပေါ်မှာ ပေါ်ပါမယ်။ မြန်မာနိုင်ငံမှာ Gemini အတွက် VPN လိုနိုင်ပါတယ်။</p>
@@ -198,6 +199,9 @@ $("go").onclick=function(){
  if(on){Android.stop();return}
  var k=$("key").value.trim();if(!k){onStatus(false,"API Key လိုပါတယ်");fold("conn",true,1);tog();return}
  Android.start(k,$("model").value.trim(),$("voice").value,$("lang").value,+$("orig").value,+$("ai").value,$("src").value,$("mode").value,$("save").checked)};
+if(ld("lt_mv")!=="2"){$("model").value="models/gemini-3.5-live-translate-preview";sv("lt_model",$("model").value);sv("lt_mv","2")}
+function trm(){var t=/live-translate/.test($("model").value);var sg=document.querySelector("#f-aud .seg");if(sg)sg.style.display=t?"none":"";$("vsel").style.display=t?"none":"";$("vh").hidden=!t}
+$("model").addEventListener("input",trm);trm();
 var FK=["txt","set","aud","conn"];
 function isOpen(k){return $("f-"+k).classList.contains("open")}
 function fold(k,o,store){var f=$("f-"+k);f.classList.toggle("open",o);f.querySelector(".fh").setAttribute("aria-expanded",o);if(store)sv("lt_f_"+k,o?"1":"0")}
