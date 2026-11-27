@@ -163,7 +163,7 @@ class TranslatorService : Service() {
         else "You are a professional live interpreter between $lang and Burmese (Myanmar). When you hear $lang, translate it into Burmese. When you hear Burmese, translate it into $lang. If you hear any other language, translate it into Burmese. $rules"
         isTr = model.contains("live-translate")
         fun codeOf(n: String) = when (n) { "Japanese" -> "ja"; "Korean" -> "ko"; "English" -> "en"; "Thai" -> "th"; "Chinese (Mandarin)" -> "zh-Hans"; else -> "en" }
-        fun trSetup(code: String) = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"inputAudioTranscription":{},"outputAudioTranscription":{},"translationConfig":{"targetLanguageCode":"$code","echoTargetLanguage":false}}}}""")
+        fun trSetup(code: String) = JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"translationConfig":{"targetLanguageCode":"$code","echoTargetLanguage":false}},"inputAudioTranscription":{},"outputAudioTranscription":{}}}""")
         val setup = if (isTr) trSetup("my") else JSONObject("""{"setup":{"model":"$model","generationConfig":{"responseModalities":["AUDIO"],"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"$voice"}}}},"systemInstruction":{"parts":[{"text":"$prompt"}]},"inputAudioTranscription":{},"outputAudioTranscription":{},"realtimeInputConfig":{"activityHandling":"NO_INTERRUPTION","automaticActivityDetection":{"startOfSpeechSensitivity":"START_SENSITIVITY_HIGH","endOfSpeechSensitivity":"END_SENSITIVITY_HIGH","prefixPaddingMs":20,"silenceDurationMs":300}}}}""")
         val setup2 = if (isTr && mode != "my" && lang != "Auto") trSetup(codeOf(lang)) else null
         val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
@@ -171,7 +171,10 @@ class TranslatorService : Service() {
             .url("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
             .header("x-goog-api-key", key).build()
         fun open(st: JSONObject, primary: Boolean): WebSocket = client.newWebSocket(req, object : WebSocketListener() {
-            override fun onOpen(w: WebSocket, r: Response) { w.send(st.toString()) }
+            override fun onOpen(w: WebSocket, r: Response) {
+                w.send(st.toString())
+                report(true, "ချိတ်မိပါပြီ၊ Server ဆီက အဖြေ စောင့်နေပါတယ်…")
+            }
             override fun onMessage(w: WebSocket, text: String) = handle(text, primary)
             override fun onMessage(w: WebSocket, bytes: ByteString) = handle(bytes.utf8(), primary)
             override fun onClosing(w: WebSocket, code: Int, reason: String) {
@@ -197,7 +200,14 @@ class TranslatorService : Service() {
     private var subOn = true
     private var subLines = 2
     private var subSp = 15f
-    private val hideRun = Runnable { tv?.visibility = android.view.View.GONE }
+    private class Cue(val text: String, val at: Long, var shownAt: Long = 0L)
+    private val cueQ = ArrayDeque<Cue>()
+    private var cur: Cue? = null
+    private val pend = StringBuilder()
+    private var subMaxW = 0
+    private val tickRun = Runnable { tick() }
+    private val idleFlush = Runnable { flushPend(true) }
+    private val queuedBytes = java.util.concurrent.atomic.AtomicLong(0)
     private var origPct = 20
     private var aiPct = 100
     private lateinit var subLp: WindowManager.LayoutParams
@@ -252,11 +262,13 @@ class TranslatorService : Service() {
 
         val pr = getSharedPreferences("ui", MODE_PRIVATE)
         subLines = pr.getInt("lines", 2); subSp = pr.getFloat("sp", 15f)
+        subMaxW = (sw * 0.92).toInt()
         tv = TextView(this).apply {
             setTextColor(ink); textSize = subSp; gravity = Gravity.CENTER
             setPadding(dp(14), dp(8), dp(14), dp(8)); text = ""; visibility = android.view.View.GONE; background = glass(20)
+            maxWidth = subMaxW; alpha = 0f
         }
-        subLp = lp((sw * 0.92).toInt()).apply { x = (sw * 0.04).toInt(); y = (sh * 0.68).toInt() }
+        subLp = lp(WindowManager.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; x = 0; y = (sh * 0.68).toInt() }
         wm!!.addView(tv, subLp)
         drag(tv!!, subLp, false, null, null)
 
@@ -287,10 +299,10 @@ class TranslatorService : Service() {
             addView(label("AI ဘာသာပြန်သံ"))
             addView(seek(150, aiPct) { p -> gain = p / 100f })
             addView(label("စာလုံးအရွယ်"))
-            addView(seek(12, (subSp - 12f).toInt()) { p -> subSp = 12f + p; tv?.textSize = subSp; getSharedPreferences("ui", MODE_PRIVATE).edit().putFloat("sp", subSp).apply(); showSub() })
+            addView(seek(12, (subSp - 12f).toInt()) { p -> subSp = 12f + p; tv?.textSize = subSp; getSharedPreferences("ui", MODE_PRIVATE).edit().putFloat("sp", subSp).apply() })
             addView(label("စာတန်း စာကြောင်းရေ"))
-            addView(seek(4, subLines - 1) { p -> subLines = p + 1; getSharedPreferences("ui", MODE_PRIVATE).edit().putInt("lines", subLines).apply(); showSub() })
-            addView(btn("စာတန်း ပိတ်/ဖွင့်", 0x1A14181F, ink) { subOn = !subOn; if (!subOn) tv?.visibility = android.view.View.GONE else showSub() }, gap)
+            addView(seek(4, subLines - 1) { p -> subLines = p + 1; getSharedPreferences("ui", MODE_PRIVATE).edit().putInt("lines", subLines).apply() })
+            addView(btn("စာတန်း ပိတ်/ဖွင့်", 0x1A14181F, ink) { subOn = !subOn; if (!subOn) clearSub() }, gap)
             addView(btn("စာကို ယခုသိမ်းမယ်", 0x1A14181F, ink) { saveTranscript(true) }, gap)
             addView(btn("ရပ်မယ်", acc, 0xFFFFFFFF.toInt()) { stopSelf() }, gap)
         }
@@ -301,22 +313,111 @@ class TranslatorService : Service() {
         }
     }
 
-    private fun showSub() {
-        val t = tv ?: return
-        if (outT.isEmpty() || !subOn) return
-        t.maxLines = Int.MAX_VALUE
-        t.text = outT.takeLast(320)
-        t.visibility = android.view.View.VISIBLE
-        t.post {
-            val l = t.layout
-            if (l != null && l.lineCount > subLines) {
-                val st = l.getLineStart(l.lineCount - subLines)
-                t.text = "…" + t.text.toString().substring(st)
+    // ---- Subtitle engine: sentence cues -> pages of <= subLines lines -> timed, audio-synced fade in/out ----
+    private fun subFeed(t: String) {
+        if (!subOn) return
+        pend.append(t)
+        flushPend(false)
+        ui.removeCallbacks(idleFlush); ui.postDelayed(idleFlush, 900)
+    }
+
+    private fun flushPend(force: Boolean) {
+        if (!subOn) { pend.setLength(0); return }
+        while (pend.isNotEmpty()) {
+            val s = pend.toString()
+            var cut = -1
+            for (k in s.length - 1 downTo 0) {
+                val ch = s[k]
+                if (ch == '။' || ch == '。' || ch == '？' || ch == '！' ||
+                    ((ch == '.' || ch == '?' || ch == '!') && k + 1 < s.length && s[k + 1].isWhitespace())) { cut = k + 1; break }
             }
-            t.maxLines = subLines
+            val soft = subLines * 38
+            if (cut < 0 && s.length > soft) {
+                for (k in soft downTo soft / 2) {
+                    val ch = s[k]
+                    if (ch == ' ' || ch == '၊' || ch == ',') { cut = k + 1; break }
+                }
+            }
+            if (cut < 0 && force) cut = s.length
+            if (cut <= 0) break
+            emitCue(s.substring(0, cut))
+            pend.delete(0, cut)
         }
-        ui.removeCallbacks(hideRun)
-        ui.postDelayed(hideRun, 4000)
+    }
+
+    private fun audioLagMs(): Long = (queuedBytes.get() / 48 + 250).coerceIn(0L, 6000L)
+
+    private fun emitCue(raw: String) {
+        val t = tv ?: return
+        val s = raw.trim()
+        if (s.isEmpty()) return
+        val w = (subMaxW - t.paddingLeft - t.paddingRight).coerceAtLeast(100)
+        val sl = android.text.StaticLayout.Builder.obtain(s, 0, s.length, t.paint, w).build()
+        val at = android.os.SystemClock.uptimeMillis() + audioLagMs()
+        var i = 0
+        while (i < sl.lineCount) {
+            val j = minOf(i + subLines, sl.lineCount)
+            val page = s.substring(sl.getLineStart(i), sl.getLineEnd(j - 1)).trim()
+            if (page.isNotEmpty()) cueQ.addLast(Cue(page, at))
+            i = j
+        }
+        while (cueQ.size > 8) cueQ.removeFirst()
+        tick()
+    }
+
+    private fun holdFor(text: String, pressure: Int): Long {
+        val base = (text.length * 55L + 900L).coerceIn(1500L, 5500L)
+        val f = when (pressure) { 0, 1 -> 1.0; 2 -> 0.75; 3 -> 0.6; else -> 0.45 }
+        return (base * f).toLong().coerceAtLeast(1000L)
+    }
+
+    private fun tick() {
+        ui.removeCallbacks(tickRun)
+        if (tv == null) return
+        val now = android.os.SystemClock.uptimeMillis()
+        val next = cueQ.firstOrNull()
+        val c = cur
+        if (c == null) {
+            if (next == null) return
+            if (now >= next.at) { cueQ.removeFirst(); showCue(next, now, false) }
+            ui.postDelayed(tickRun, 100)
+            return
+        }
+        val shown = now - c.shownAt
+        val pressure = cueQ.size
+        val hold = holdFor(c.text, pressure)
+        val minHold = if (pressure >= 2) 900L else 1100L
+        if (next != null && shown >= minHold && (now >= next.at || (pressure >= 2 && shown >= hold))) {
+            cueQ.removeFirst(); showCue(next, now, true)
+        } else if (shown >= hold && (next == null || shown >= hold * 3 / 2 + 800)) {
+            hideCue()
+            if (cueQ.isEmpty()) return
+        }
+        ui.postDelayed(tickRun, 100)
+    }
+
+    private fun showCue(c: Cue, now: Long, swap: Boolean) {
+        val t = tv ?: return
+        cur = c; c.shownAt = now
+        t.animate().cancel()
+        t.text = c.text
+        t.visibility = android.view.View.VISIBLE
+        t.alpha = if (swap) 0.4f else 0f
+        t.translationY = if (swap) 0f else dp(8).toFloat()
+        t.animate().alpha(1f).translationY(0f).setDuration(if (swap) 140L else 200L).start()
+    }
+
+    private fun hideCue() {
+        val t = tv ?: return
+        cur = null
+        t.animate().cancel()
+        t.animate().alpha(0f).setDuration(240L).withEndAction { if (cur == null) t.visibility = android.view.View.GONE }.start()
+    }
+
+    private fun clearSub() {
+        pend.setLength(0); cueQ.clear(); cur = null
+        ui.removeCallbacks(tickRun); ui.removeCallbacks(idleFlush)
+        tv?.let { it.animate().cancel(); it.alpha = 0f; it.visibility = android.view.View.GONE }
     }
 
     private fun handle(text: String, primary: Boolean = true) {
@@ -330,11 +431,11 @@ class TranslatorService : Service() {
         c.optJSONObject("outputTranscription")?.optString("text")?.let { t ->
             ui.post {
                 val now = System.currentTimeMillis()
-                if (isTr && now - lastOutMs > 2500) { flushTurn(); newTurn = true }
+                if (isTr && now - lastOutMs > 2500) { flushTurn(); newTurn = true; flushPend(true) }
                 lastOutMs = now
                 if (newTurn) { outT = ""; newTurn = false }
                 outT += t; curOut += t
-                showSub()
+                subFeed(t)
             }
         }
         c.optJSONObject("inputTranscription")?.optString("text")?.let { t -> if (primary) ui.post { curIn += t } }
@@ -342,7 +443,7 @@ class TranslatorService : Service() {
             for (k in 0 until ps.length()) ps.getJSONObject(k).optJSONObject("inlineData")?.optString("data")?.let { play(it) }
         }
         // "interrupted" is ignored on purpose: continuous YouTube audio must not cut off the translation
-        if (c.optBoolean("turnComplete")) ui.post { flushTurn(); newTurn = true }
+        if (c.optBoolean("turnComplete")) ui.post { flushTurn(); newTurn = true; flushPend(true) }
     }
 
     private fun flushTurn() {
@@ -379,7 +480,10 @@ class TranslatorService : Service() {
 
     private fun play(b64: String) {
         if (stopping) return
-        try { player.execute { playNow(b64) } } catch (_: Exception) {}
+        val n = b64.length * 3L / 4
+        queuedBytes.addAndGet(n)
+        try { player.execute { try { playNow(b64) } finally { queuedBytes.addAndGet(-n) } } }
+        catch (_: Exception) { queuedBytes.addAndGet(-n) }
     }
 
     private fun playNow(b64: String) {
@@ -430,7 +534,8 @@ class TranslatorService : Service() {
 
     override fun onDestroy() {
         stopping = true; live = false; running = false
-        ui.removeCallbacks(hideRun)
+        ui.removeCallbacks(tickRun); ui.removeCallbacks(idleFlush)
+        try { tv?.animate()?.cancel() } catch (_: Exception) {}
         try { ws?.close(1000, null) } catch (_: Exception) {}
         try { ws2?.close(1000, null) } catch (_: Exception) {}
         try { rec?.stop(); rec?.release() } catch (_: Exception) {}
