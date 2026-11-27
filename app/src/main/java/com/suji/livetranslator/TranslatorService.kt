@@ -65,6 +65,7 @@ class TranslatorService : Service() {
     @Volatile private var live = false
     @Volatile private var gain = 1f
     @Volatile private var stopping = false
+    @Volatile private var lastErr: String? = null
     private var newTurn = true
     private var outT = ""
     private var mic = false
@@ -81,7 +82,7 @@ class TranslatorService : Service() {
         if (running) return START_NOT_STICKY
         running = true
         startFg(i.getStringExtra("src") == "mic")
-        try { begin(i) } catch (e: Exception) { android.util.Log.e("LiveTranslate", e.toString()); report(false, "စတင်မရပါ"); stopSelf() }
+        try { begin(i) } catch (e: Exception) { android.util.Log.e("LiveTranslate", e.toString()); fail("စတင်မရပါ", e.toString()) }
         return START_NOT_STICKY
     }
 
@@ -89,7 +90,9 @@ class TranslatorService : Service() {
     private fun fail(msg: String, detail: String? = null) {
         if (stopping) return
         android.util.Log.e("LiveTranslate", detail ?: msg)
-        report(false, msg); ui.post { stopSelf() }
+        val full = if (detail.isNullOrBlank()) msg else "$msg | ${detail.take(150)}"
+        if (lastErr == null) lastErr = full
+        report(false, lastErr!!); ui.post { stopSelf() }
     }
 
     private fun startFg(micMode: Boolean) {
@@ -122,11 +125,15 @@ class TranslatorService : Service() {
         am = getSystemService(AudioManager::class.java)
         val a = am!!
         volStream = if (mic) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_ALARM
-        oldAlarm = a.getStreamVolume(volStream)
-        a.setStreamVolume(volStream, a.getStreamMaxVolume(volStream), 0)
+        try {
+            oldAlarm = a.getStreamVolume(volStream)
+            a.setStreamVolume(volStream, a.getStreamMaxVolume(volStream), 0)
+        } catch (e: Exception) { android.util.Log.w("LiveTranslate", "alarm volume: $e") }
         if (!mic) {
-            oldMusic = a.getStreamVolume(AudioManager.STREAM_MUSIC)
-            a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * orig / 100f).toInt(), 0)
+            try {
+                oldMusic = a.getStreamVolume(AudioManager.STREAM_MUSIC)
+                a.setStreamVolume(AudioManager.STREAM_MUSIC, (a.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * orig / 100f).toInt(), 0)
+            } catch (e: Exception) { android.util.Log.w("LiveTranslate", "music volume: $e") }
         }
 
         if (!mic) {
@@ -167,8 +174,17 @@ class TranslatorService : Service() {
             override fun onOpen(w: WebSocket, r: Response) { w.send(st.toString()) }
             override fun onMessage(w: WebSocket, text: String) = handle(text, primary)
             override fun onMessage(w: WebSocket, bytes: ByteString) = handle(bytes.utf8(), primary)
-            override fun onClosing(w: WebSocket, code: Int, reason: String) { w.close(1000, null); fail("ပြတ်သွားပါပြီ", reason) }
-            override fun onFailure(w: WebSocket, t: Throwable, r: Response?) { fail("ချိတ်မရပါ", t.toString()) }
+            override fun onClosing(w: WebSocket, code: Int, reason: String) {
+                w.close(1000, null)
+                if (primary) fail("ပြတ်သွားပါပြီ", "code $code: $reason")
+                else if (!stopping) { android.util.Log.e("LiveTranslate", "ws2 closed $code $reason"); ready2 = false; report(true, "⚠ ဒုတိယ ချိတ်ဆက်မှု ပြတ် ($code $reason)") }
+            }
+            override fun onFailure(w: WebSocket, t: Throwable, r: Response?) {
+                val http = r?.let { "HTTP ${it.code} ${it.message}" + (try { " " + it.peekBody(300).string() } catch (_: Exception) { "" }) } ?: ""
+                val d = (http + " " + (t.message ?: t.javaClass.simpleName)).trim()
+                if (primary) fail("ချိတ်မရပါ", d)
+                else if (!stopping) { android.util.Log.e("LiveTranslate", "ws2 failed $d"); ready2 = false; report(true, "⚠ ဒုတိယ ချိတ်ဆက်မှု မရ: ${d.take(80)}") }
+            }
         })
         ws = open(setup, true)
         if (setup2 != null) ws2 = open(setup2, false)
@@ -429,7 +445,7 @@ class TranslatorService : Service() {
         }
         val saved = saveOn && saveTranscript(false)
         player.shutdownNow()
-        report(false, if (saved) "ရပ်ပြီး၊ စာသိမ်းပြီးပါပြီ" else "ရပ်ထားပါတယ်")
+        report(false, lastErr ?: if (saved) "ရပ်ပြီး၊ စာသိမ်းပြီးပါပြီ" else "ရပ်ထားပါတယ်")
         super.onDestroy()
     }
 }

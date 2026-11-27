@@ -30,7 +30,7 @@ h1{font:700 26px/1.5 "Noto Sans Myanmar",sans-serif;margin:0;letter-spacing:-.2p
 @keyframes ring{from{transform:scale(.92);opacity:1}to{transform:scale(1.28);opacity:0}}
 @media (prefers-reduced-motion:reduce){#go[data-on="true"]::after{animation:none}}
 .st{margin-top:12px;font-size:14px;color:var(--dim);min-height:26px;text-align:center;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.st.ok{color:var(--ok);font-weight:600}.st.bad{color:var(--bad)}
+.st.ok{color:var(--ok);font-weight:600}.st.bad{color:var(--bad);white-space:normal;word-break:break-word}
 .card{margin-top:14px;padding:18px}
 .card h2{font:600 14px/1.5 "Noto Sans Myanmar",sans-serif;color:var(--dim);margin:0 0 10px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -158,7 +158,13 @@ summary{font-weight:600}
 <label for="key" class="kl">Gemini API Key</label>
 <div class="pw"><input id="key" type="password" autocomplete="off" placeholder="AIza..."><button id="ke" class="eye" type="button" aria-label="Key ပြ/ဖျောက်" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
 <p class="gs kn">Key ကို ဒီဖုန်းထဲမှာပဲ သိမ်းထားပါတယ်</p>
-<details><summary>အဆင့်မြင့်</summary><label for="model">Model ID (ပုံမှန်အတိုင်း ထားပါ)</label><input id="model" type="text" value="models/gemini-3.5-live-translate-preview"></details>
+<label for="msel" class="kl" style="margin-top:16px">Model</label>
+<select id="msel" aria-label="Model ရွေးရန်">
+<option value="models/gemini-3.5-live-translate-preview">Live Translate (ဘာသာပြန်သီးသန့်၊ အကြံပြု)</option>
+<option value="models/gemini-2.5-flash-native-audio-preview-09-2025">Native Audio (AI အသံပုံစံ ရွေးလို့ရ)</option>
+<option value="__custom">✏️ ကိုယ်တိုင် ရိုက်ထည့်မယ်</option>
+</select>
+<input id="model" type="text" value="models/gemini-3.5-live-translate-preview" placeholder="models/..." autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-top:10px" hidden>
 </div></div></div></section>
 
 <p class="note">စတင်ရင် overlay၊ အသံ၊ မျက်နှာပြင်ဖမ်းခွင့်တွေ တောင်းပါမယ်။ ဘာသာပြန်စာတန်းက တခြား app အပေါ်မှာ ပေါ်ပါမယ်။ မြန်မာနိုင်ငံမှာ Gemini အတွက် VPN လိုနိုင်ပါတယ်။</p>
@@ -192,8 +198,8 @@ function sums(){var LN={"Auto":"✨ Auto","Japanese":"🇯🇵 ဂျပန်",
 t("s-set",($("src").value==="mic"?"🎤":"📱")+" · "+($("mode").value==="my"?"🌐→🇲🇲":"🇲🇲⇄🌐")+" · "+($("save").checked?"သိမ်းမယ်":"မသိမ်းဘူး"));
 t("s-aud","AI "+$("ai").value+"% · "+$("voice").value);t("s-conn",$("key").value.trim()?"Key ✓":"Key မထည့်ရသေး")}
 $("key").addEventListener("input",sums);$("ke").onclick=function(){var h=$("key").type==="password";$("key").type=h?"text":"password";this.setAttribute("aria-pressed",h)};
-function short(m){if(m.length<=40)return m;if(/ချိတ်|ပြတ်|မရ/.test(m))return "ချိတ်ဆက်မရပါ။ VPN/Key ကို စစ်ပြီး ထပ်စမ်းပါ";return m.slice(0,40)+"…"}
-window.onStatus=function(o,m){on=o;$("go").dataset.on=o;$("go").textContent=o?"ရပ်မယ်":"စတင်မယ်";var s=$("st");s.textContent=short(m);s.className="st "+(o?"ok":(/မရ|ပြတ်|လိုပါ|မပေး/.test(m)?"bad":""))};
+function short(m){return m.length<=200?m:m.slice(0,200)+"…"}
+window.onStatus=function(o,m){on=o;$("go").dataset.on=o;$("go").textContent=o?"ရပ်မယ်":"စတင်မယ်";var s=$("st");s.textContent=short(m);s.className="st "+(o?"ok":(/မရ|ပြတ်|လိုပါ|မပေး|စတင်မရ/.test(m)?"bad":""))};
 $("go").onclick=function(){
  if(!window.Android){onStatus(false,"ဒီစာမျက်နှာကို app ထဲမှာပဲ စတင်လို့ရပါတယ်");return}
  if(on){Android.stop();return}
@@ -202,6 +208,11 @@ $("go").onclick=function(){
 if(ld("lt_mv")!=="2"){$("model").value="models/gemini-3.5-live-translate-preview";sv("lt_model",$("model").value);sv("lt_mv","2")}
 function trm(){var t=/live-translate/.test($("model").value);var sg=document.querySelector("#f-aud .seg");if(sg)sg.style.display=t?"none":"";$("vsel").style.display=t?"none":"";$("vh").hidden=!t}
 $("model").addEventListener("input",trm);trm();
+function msync(){var s=$("msel"),m=$("model").value.trim(),f=false;[].forEach.call(s.options,function(o){if(o.value===m)f=true});
+s.value=f?m:"__custom";$("model").hidden=f}
+msync();
+$("msel").onchange=function(){if(this.value==="__custom"){$("model").hidden=false;$("model").focus()}else{$("model").hidden=true;$("model").value=this.value;sv("lt_model",this.value)}trm()};
+$("model").addEventListener("change",msync);
 var FK=["txt","set","aud","conn"];
 function isOpen(k){return $("f-"+k).classList.contains("open")}
 function fold(k,o,store){var f=$("f-"+k);f.classList.toggle("open",o);f.querySelector(".fh").setAttribute("aria-expanded",o);if(store)sv("lt_f_"+k,o?"1":"0")}
